@@ -13,8 +13,8 @@ DISK_SPEED = 5
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("TRON")
-# icon = pygame.image.load('images\icon.png')
-# pygame.display.set_icon(icon)
+icon = pygame.image.load('images\icon.png')
+pygame.display.set_icon(icon)
 
 
 class Player:
