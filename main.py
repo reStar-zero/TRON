@@ -13,13 +13,16 @@ SHIELD_COLOR = (0, 0, 0)
 SHIELD_OUTLINE_COLOR = (255, 255, 0)
 ENEMY_COLOR = (0, 0, 0)
 ENEMY_OUTLINE_COLOR = (255, 0, 0)
-DISK_DISTANCE = 200
-DISK_SPEED = 6
+DISK_DISTANCE = 400
+DISK_SPEED = 10
 DISK_RADIUS = 5
+DISK_ON_BACK_RADIUS = 8  # Увеличенный радиус диска на спине
 SHIELD_RADIUS = 8
 OUTLINE_WIDTH = 2
 GRID_SIZE = 50
 RETURN_SPEED_MULTIPLIER = 1.5
+TRAIL_LENGTH = 20
+TRAIL_FADE = 0.7
 
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -38,6 +41,7 @@ class Player:
         self.rect = pygame.Rect(WIDTH // 2, HEIGHT // 2, 50, 50)
         self.speed = 6
         self.has_shield = False
+        self.has_disk = True  # Флаг наличия диска у игрока
 
     def move(self, dx, dy):
         self.rect.x += dx * self.speed
@@ -48,6 +52,16 @@ class Player:
     def draw(self):
         pygame.draw.rect(screen, PLAYER_COLOR, self.rect)
         pygame.draw.rect(screen, PLAYER_OUTLINE_COLOR, self.rect, OUTLINE_WIDTH)
+        
+        # Рисуем диск на спине игрока, если он у него есть
+        if self.has_disk:
+            # Диск точно по центру игрока
+            disk_x = self.rect.centerx
+            disk_y = self.rect.centery
+            
+            # Рисуем диск увеличенного размера
+            pygame.draw.circle(screen, DISK_COLOR, (int(disk_x), int(disk_y)), DISK_ON_BACK_RADIUS)
+            pygame.draw.circle(screen, DISK_OUTLINE_COLOR, (int(disk_x), int(disk_y)), DISK_ON_BACK_RADIUS, OUTLINE_WIDTH)
 
 class Disk:
     def __init__(self, x, y, angle):
@@ -62,12 +76,17 @@ class Disk:
         self.radius = DISK_RADIUS
         self.returning = False
         self.target_position = None
+        self.trail = []
 
     def move(self, player_position):
         if self.flying:
             self.x += self.speed * math.cos(self.angle)
             self.y += self.speed * math.sin(self.angle)
             self.distance_traveled += self.speed
+            
+            self.trail.append((self.x, self.y))
+            if len(self.trail) > TRAIL_LENGTH:
+                self.trail.pop(0)
             
             if self.distance_traveled >= DISK_DISTANCE:
                 self.flying = False
@@ -83,6 +102,10 @@ class Disk:
             if distance_to_target > self.return_speed:
                 self.x += (dx / distance_to_target) * self.return_speed
                 self.y += (dy / distance_to_target) * self.return_speed
+                
+                self.trail.append((self.x, self.y))
+                if len(self.trail) > TRAIL_LENGTH:
+                    self.trail.pop(0)
             else:
                 self.x = target_x
                 self.y = target_y
@@ -94,6 +117,16 @@ class Disk:
                           self.radius * 2, self.radius * 2)
 
     def draw(self):
+        for i, pos in enumerate(self.trail):
+            alpha = (i + 1) / len(self.trail) * 255 * TRAIL_FADE
+            trail_radius = self.radius * (0.5 + (i / len(self.trail)) * 0.5)
+            
+            trail_surface = pygame.Surface((trail_radius * 2, trail_radius * 2), pygame.SRCALPHA)
+            trail_color = (*DISK_OUTLINE_COLOR, int(alpha))
+            pygame.draw.circle(trail_surface, trail_color, 
+                             (trail_radius, trail_radius), trail_radius)
+            screen.blit(trail_surface, (pos[0] - trail_radius, pos[1] - trail_radius))
+        
         pygame.draw.circle(screen, DISK_COLOR, (int(self.x), int(self.y)), self.radius)
         pygame.draw.circle(screen, DISK_OUTLINE_COLOR, (int(self.x), int(self.y)), self.radius, OUTLINE_WIDTH)
 
@@ -159,7 +192,6 @@ def main():
     enemies = [Enemy() for _ in range(5)]
     shield = Shield(player)
     running = True
-    can_throw = True
     show_shield = False
 
     while running:
@@ -172,11 +204,12 @@ def main():
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
-                    if can_throw and not any(d.flying or d.returning for d in disks):
+                    # Проверяем, есть ли диск у игрока и нет ли активных дисков
+                    if player.has_disk and not any(d.flying or d.returning for d in disks):
                         mouse_x, mouse_y = pygame.mouse.get_pos()
                         angle = math.atan2(mouse_y - player.rect.centery, mouse_x - player.rect.centerx)
                         disks.append(Disk(player.rect.centerx, player.rect.centery, angle))
-                        can_throw = False
+                        player.has_disk = False  # Убираем диск со спины
                 
                 elif event.button == 3:
                     show_shield = not show_shield
@@ -196,7 +229,7 @@ def main():
         for disk in disks[:]:
             if disk.move(player_position):
                 disks.remove(disk)
-                can_throw = True
+                player.has_disk = True  # Возвращаем диск на спину
 
             for enemy in enemies[:]:
                 if disk.get_rect().colliderect(enemy.rect) and disk.flying:
