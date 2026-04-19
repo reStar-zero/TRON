@@ -37,44 +37,35 @@ def draw_grid():
         pygame.draw.line(screen, WHITE, (0, y), (WIDTH, y), 1)
 
 def draw_dual_disk(x, y, radius, angle=0):
-    """Рисует двойной диск с чёрной сердцевиной и голубым обрамлением"""
-    # Внешний голубой диск
     pygame.draw.circle(screen, DISK_OUTLINE_COLOR, (int(x), int(y)), radius)
     
-    # Чёрный диск среднего размера
     inner_radius = radius - 2
     pygame.draw.circle(screen, DISK_COLOR, (int(x), int(y)), inner_radius)
     
-    # Внутренняя голубая сердцевина
     core_radius = radius - 4
     pygame.draw.circle(screen, DISK_OUTLINE_COLOR, (int(x), int(y)), core_radius)
     
-    # Самая внутренняя чёрная точка
     black_core_radius = radius - 6
     pygame.draw.circle(screen, DISK_COLOR, (int(x), int(y)), black_core_radius)
 
 def draw_rotating_dual_disk(x, y, radius, angle):
-    """Рисует вращающийся двойной диск"""
-    # Создаём поверхность для диска
-    disk_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+    size = radius * 2 + 4  
+    disk_surface = pygame.Surface((size, size), pygame.SRCALPHA)
+    center = size // 2
     
-    # Внешний голубой диск
-    pygame.draw.circle(disk_surface, DISK_OUTLINE_COLOR, (radius, radius), radius)
+    pygame.draw.circle(disk_surface, DISK_OUTLINE_COLOR, (center, center), radius)
     
-    # Чёрный диск среднего размера
     inner_radius = radius - 2
-    pygame.draw.circle(disk_surface, DISK_COLOR, (radius, radius), inner_radius)
+    pygame.draw.circle(disk_surface, DISK_COLOR, (center, center), inner_radius)
     
-    # Внутренняя голубая сердцевина
     core_radius = radius - 4
-    pygame.draw.circle(disk_surface, DISK_OUTLINE_COLOR, (radius, radius), core_radius)
+    pygame.draw.circle(disk_surface, DISK_OUTLINE_COLOR, (center, center), core_radius)
     
-    # Самая внутренняя чёрная точка
     black_core_radius = radius - 6
-    pygame.draw.circle(disk_surface, DISK_COLOR, (radius, radius), black_core_radius)
+    pygame.draw.circle(disk_surface, DISK_COLOR, (center, center), black_core_radius)
     
-    # Поворачиваем диск
     rotated_disk = pygame.transform.rotate(disk_surface, math.degrees(angle))
+    
     new_rect = rotated_disk.get_rect(center=(x, y))
     screen.blit(rotated_disk, new_rect)
 
@@ -83,7 +74,7 @@ class Player:
         self.rect = pygame.Rect(WIDTH // 2, HEIGHT // 2, 50, 50)
         self.speed = 6
         self.has_shield = False
-        self.has_disk = True  # Флаг наличия диска у игрока
+        self.has_disk = True  
 
     def move(self, dx, dy):
         self.rect.x += dx * self.speed
@@ -95,13 +86,10 @@ class Player:
         pygame.draw.rect(screen, PLAYER_COLOR, self.rect)
         pygame.draw.rect(screen, PLAYER_OUTLINE_COLOR, self.rect, OUTLINE_WIDTH)
         
-        # Рисуем диск на спине игрока, если он у него есть
         if self.has_disk:
-            # Диск точно по центру игрока
             disk_x = self.rect.centerx
             disk_y = self.rect.centery
             
-            # Рисуем двойной диск увеличенного размера
             draw_dual_disk(disk_x, disk_y, DISK_ON_BACK_RADIUS)
 
 class Disk:
@@ -126,7 +114,6 @@ class Disk:
             self.y += self.speed * math.sin(self.angle)
             self.distance_traveled += self.speed
             
-            # Вращение диска
             self.rotation_angle += 0.3
             
             self.trail.append((self.x, self.y))
@@ -148,7 +135,6 @@ class Disk:
                 self.x += (dx / distance_to_target) * self.return_speed
                 self.y += (dy / distance_to_target) * self.return_speed
                 
-                # Вращение диска при возвращении
                 self.rotation_angle += 0.3
                 
                 self.trail.append((self.x, self.y))
@@ -176,7 +162,6 @@ class Disk:
                              (trail_radius, trail_radius), trail_radius)
             screen.blit(trail_surface, (pos[0] - trail_radius, pos[1] - trail_radius))
         
-        # Рисуем вращающийся двойной диск
         draw_rotating_dual_disk(self.x, self.y, self.radius, self.rotation_angle)
 
 class Shield:
@@ -253,7 +238,6 @@ def main():
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
-                    # Проверяем, есть ли диск у игрока и нет ли активных дисков
                     if player.has_disk and not any(d.flying or d.returning for d in disks):
                         mouse_x, mouse_y = pygame.mouse.get_pos()
                         angle = math.atan2(mouse_y - player.rect.centery, mouse_x - player.rect.centerx)
@@ -278,7 +262,7 @@ def main():
         for disk in disks[:]:
             if disk.move(player_position):
                 disks.remove(disk)
-                player.has_disk = True  # Возвращаем диск на спину
+                player.has_disk = True 
 
             for enemy in enemies[:]:
                 if disk.get_rect().colliderect(enemy.rect) and disk.flying:
