@@ -36,6 +36,48 @@ def draw_grid():
     for y in range(0, HEIGHT, GRID_SIZE):
         pygame.draw.line(screen, WHITE, (0, y), (WIDTH, y), 1)
 
+def draw_dual_disk(x, y, radius, angle=0):
+    """Рисует двойной диск с чёрной сердцевиной и голубым обрамлением"""
+    # Внешний голубой диск
+    pygame.draw.circle(screen, DISK_OUTLINE_COLOR, (int(x), int(y)), radius)
+    
+    # Чёрный диск среднего размера
+    inner_radius = radius - 2
+    pygame.draw.circle(screen, DISK_COLOR, (int(x), int(y)), inner_radius)
+    
+    # Внутренняя голубая сердцевина
+    core_radius = radius - 4
+    pygame.draw.circle(screen, DISK_OUTLINE_COLOR, (int(x), int(y)), core_radius)
+    
+    # Самая внутренняя чёрная точка
+    black_core_radius = radius - 6
+    pygame.draw.circle(screen, DISK_COLOR, (int(x), int(y)), black_core_radius)
+
+def draw_rotating_dual_disk(x, y, radius, angle):
+    """Рисует вращающийся двойной диск"""
+    # Создаём поверхность для диска
+    disk_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+    
+    # Внешний голубой диск
+    pygame.draw.circle(disk_surface, DISK_OUTLINE_COLOR, (radius, radius), radius)
+    
+    # Чёрный диск среднего размера
+    inner_radius = radius - 2
+    pygame.draw.circle(disk_surface, DISK_COLOR, (radius, radius), inner_radius)
+    
+    # Внутренняя голубая сердцевина
+    core_radius = radius - 4
+    pygame.draw.circle(disk_surface, DISK_OUTLINE_COLOR, (radius, radius), core_radius)
+    
+    # Самая внутренняя чёрная точка
+    black_core_radius = radius - 6
+    pygame.draw.circle(disk_surface, DISK_COLOR, (radius, radius), black_core_radius)
+    
+    # Поворачиваем диск
+    rotated_disk = pygame.transform.rotate(disk_surface, math.degrees(angle))
+    new_rect = rotated_disk.get_rect(center=(x, y))
+    screen.blit(rotated_disk, new_rect)
+
 class Player:
     def __init__(self):
         self.rect = pygame.Rect(WIDTH // 2, HEIGHT // 2, 50, 50)
@@ -59,9 +101,8 @@ class Player:
             disk_x = self.rect.centerx
             disk_y = self.rect.centery
             
-            # Рисуем диск увеличенного размера
-            pygame.draw.circle(screen, DISK_COLOR, (int(disk_x), int(disk_y)), DISK_ON_BACK_RADIUS)
-            pygame.draw.circle(screen, DISK_OUTLINE_COLOR, (int(disk_x), int(disk_y)), DISK_ON_BACK_RADIUS, OUTLINE_WIDTH)
+            # Рисуем двойной диск увеличенного размера
+            draw_dual_disk(disk_x, disk_y, DISK_ON_BACK_RADIUS)
 
 class Disk:
     def __init__(self, x, y, angle):
@@ -71,6 +112,7 @@ class Disk:
         self.speed = DISK_SPEED
         self.return_speed = DISK_SPEED * RETURN_SPEED_MULTIPLIER
         self.angle = angle
+        self.rotation_angle = 0  # Угол поворота диска
         self.distance_traveled = 0
         self.flying = True
         self.radius = DISK_RADIUS
@@ -83,6 +125,9 @@ class Disk:
             self.x += self.speed * math.cos(self.angle)
             self.y += self.speed * math.sin(self.angle)
             self.distance_traveled += self.speed
+            
+            # Вращение диска
+            self.rotation_angle += 0.3
             
             self.trail.append((self.x, self.y))
             if len(self.trail) > TRAIL_LENGTH:
@@ -103,6 +148,9 @@ class Disk:
                 self.x += (dx / distance_to_target) * self.return_speed
                 self.y += (dy / distance_to_target) * self.return_speed
                 
+                # Вращение диска при возвращении
+                self.rotation_angle += 0.3
+                
                 self.trail.append((self.x, self.y))
                 if len(self.trail) > TRAIL_LENGTH:
                     self.trail.pop(0)
@@ -117,6 +165,7 @@ class Disk:
                           self.radius * 2, self.radius * 2)
 
     def draw(self):
+        # Рисуем след
         for i, pos in enumerate(self.trail):
             alpha = (i + 1) / len(self.trail) * 255 * TRAIL_FADE
             trail_radius = self.radius * (0.5 + (i / len(self.trail)) * 0.5)
@@ -127,8 +176,8 @@ class Disk:
                              (trail_radius, trail_radius), trail_radius)
             screen.blit(trail_surface, (pos[0] - trail_radius, pos[1] - trail_radius))
         
-        pygame.draw.circle(screen, DISK_COLOR, (int(self.x), int(self.y)), self.radius)
-        pygame.draw.circle(screen, DISK_OUTLINE_COLOR, (int(self.x), int(self.y)), self.radius, OUTLINE_WIDTH)
+        # Рисуем вращающийся двойной диск
+        draw_rotating_dual_disk(self.x, self.y, self.radius, self.rotation_angle)
 
 class Shield:
     def __init__(self, player):
