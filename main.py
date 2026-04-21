@@ -13,6 +13,8 @@ SHIELD_COLOR = (0, 0, 0)
 SHIELD_OUTLINE_COLOR = (255, 255, 0)
 ENEMY_COLOR = (0, 0, 0)
 ENEMY_OUTLINE_COLOR = (255, 0, 0)
+FORBIDDEN_COLOR = (0, 0, 0)
+FORBIDDEN_OUTLINE_COLOR = (255, 255, 255)
 DISK_DISTANCE = 400
 DISK_SPEED = 10
 DISK_RADIUS = 5
@@ -23,6 +25,7 @@ GRID_SIZE = 50
 RETURN_SPEED_MULTIPLIER = 1.5
 TRAIL_LENGTH = 20
 TRAIL_FADE = 0.7
+FORBIDDEN_SIZE = 200
 
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -30,11 +33,17 @@ pygame.display.set_caption("TRON")
 programIcon = pygame.image.load('images/icon.png')
 pygame.display.set_icon(programIcon)
 
+forbidden_rect = pygame.Rect(WIDTH // 2 - FORBIDDEN_SIZE // 2, HEIGHT // 2 - FORBIDDEN_SIZE // 2, FORBIDDEN_SIZE, FORBIDDEN_SIZE)
+
 def draw_grid():
     for x in range(0, WIDTH, GRID_SIZE):
         pygame.draw.line(screen, WHITE, (x, 0), (x, HEIGHT), 1)
     for y in range(0, HEIGHT, GRID_SIZE):
         pygame.draw.line(screen, WHITE, (0, y), (WIDTH, y), 1)
+
+def draw_forbidden_area():
+    pygame.draw.rect(screen, FORBIDDEN_COLOR, forbidden_rect)
+    pygame.draw.rect(screen, FORBIDDEN_OUTLINE_COLOR, forbidden_rect, OUTLINE_WIDTH)
 
 def draw_dual_disk(x, y, radius, angle=0):
     pygame.draw.circle(screen, DISK_OUTLINE_COLOR, (int(x), int(y)), radius)
@@ -65,13 +74,22 @@ def draw_rotating_dual_disk(x, y, radius, angle):
 class Player:
     def __init__(self):
         self.rect = pygame.Rect(WIDTH // 2, HEIGHT // 2, 50, 50)
+        while self.rect.colliderect(forbidden_rect):
+            self.rect.x = random.randint(0, WIDTH - self.rect.width)
+            self.rect.y = random.randint(0, HEIGHT - self.rect.height)
         self.speed = 6
         self.has_shield = False
         self.has_disk = True  
 
     def move(self, dx, dy):
-        self.rect.x += dx * self.speed
-        self.rect.y += dy * self.speed
+        new_x = self.rect.x + dx * self.speed
+        new_y = self.rect.y + dy * self.speed
+        new_rect = pygame.Rect(new_x, new_y, self.rect.width, self.rect.height)
+        
+        if not new_rect.colliderect(forbidden_rect):
+            self.rect.x = new_x
+            self.rect.y = new_y
+        
         self.rect.x = max(0, min(WIDTH - self.rect.width, self.rect.x))
         self.rect.y = max(0, min(HEIGHT - self.rect.height, self.rect.y))
 
@@ -100,11 +118,45 @@ class Disk:
         self.target_position = None
         self.trail = []
 
+    def check_collision_with_forbidden(self):
+        disk_rect = pygame.Rect(self.x - self.radius, self.y - self.radius, self.radius * 2, self.radius * 2)
+        
+        if disk_rect.colliderect(forbidden_rect):
+            overlap_left = disk_rect.right - forbidden_rect.left
+            overlap_right = forbidden_rect.right - disk_rect.left
+            overlap_top = disk_rect.bottom - forbidden_rect.top
+            overlap_bottom = forbidden_rect.bottom - disk_rect.top
+            
+            min_overlap = min(overlap_left, overlap_right, overlap_top, overlap_bottom)
+            
+            if min_overlap == overlap_left or min_overlap == overlap_right:
+                self.angle = math.pi - self.angle
+                if min_overlap == overlap_left:
+                    self.x = forbidden_rect.left - self.radius - 1
+                else:
+                    self.x = forbidden_rect.right + self.radius + 1
+            else:
+                self.angle = -self.angle
+                if min_overlap == overlap_top:
+                    self.y = forbidden_rect.top - self.radius - 1
+                else:
+                    self.y = forbidden_rect.bottom + self.radius + 1
+
     def move(self, player_position):
         if self.flying:
             self.x += self.speed * math.cos(self.angle)
             self.y += self.speed * math.sin(self.angle)
             self.distance_traveled += self.speed
+            
+            self.check_collision_with_forbidden()
+            
+            if self.x - self.radius < 0 or self.x + self.radius > WIDTH:
+                self.angle = math.pi - self.angle
+                self.x = max(self.radius, min(WIDTH - self.radius, self.x))
+            
+            if self.y - self.radius < 0 or self.y + self.radius > HEIGHT:
+                self.angle = -self.angle
+                self.y = max(self.radius, min(HEIGHT - self.radius, self.y))
             
             self.rotation_angle += 0.3
             
@@ -126,6 +178,8 @@ class Disk:
             if distance_to_target > self.return_speed:
                 self.x += (dx / distance_to_target) * self.return_speed
                 self.y += (dy / distance_to_target) * self.return_speed
+                
+                self.check_collision_with_forbidden()
                 
                 self.rotation_angle += 0.3
                 
@@ -193,6 +247,9 @@ class Shield:
 class Enemy:
     def __init__(self):
         self.rect = pygame.Rect(random.randint(0, WIDTH - 50), random.randint(0, HEIGHT - 50), 50, 50)
+        while self.rect.colliderect(forbidden_rect):
+            self.rect.x = random.randint(0, WIDTH - self.rect.width)
+            self.rect.y = random.randint(0, HEIGHT - self.rect.height)
         self.health = 50
         self.speed = 2
         self.move_timer = 0
@@ -206,8 +263,13 @@ class Enemy:
             self.direction = random.choice([(1, 0), (-1, 0), (0, 1), (0, -1)])
             
         dx, dy = self.direction
-        self.rect.x += dx * self.speed
-        self.rect.y += dy * self.speed
+        new_x = self.rect.x + dx * self.speed
+        new_y = self.rect.y + dy * self.speed
+        new_rect = pygame.Rect(new_x, new_y, self.rect.width, self.rect.height)
+        
+        if not new_rect.colliderect(forbidden_rect):
+            self.rect.x = new_x
+            self.rect.y = new_y
         
         self.rect.x = max(0, min(WIDTH - self.rect.width, self.rect.x))
         self.rect.y = max(0, min(HEIGHT - self.rect.height, self.rect.y))
@@ -228,6 +290,7 @@ def main():
     while running:
         screen.fill(BLACK)
         draw_grid()
+        draw_forbidden_area()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
