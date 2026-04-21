@@ -16,7 +16,7 @@ ENEMY_OUTLINE_COLOR = (255, 0, 0)
 DISK_DISTANCE = 400
 DISK_SPEED = 10
 DISK_RADIUS = 5
-DISK_ON_BACK_RADIUS = 8  # Увеличенный радиус диска на спине
+DISK_ON_BACK_RADIUS = 8
 SHIELD_RADIUS = 8
 OUTLINE_WIDTH = 2
 GRID_SIZE = 50
@@ -38,13 +38,10 @@ def draw_grid():
 
 def draw_dual_disk(x, y, radius, angle=0):
     pygame.draw.circle(screen, DISK_OUTLINE_COLOR, (int(x), int(y)), radius)
-    
     inner_radius = radius - 2
     pygame.draw.circle(screen, DISK_COLOR, (int(x), int(y)), inner_radius)
-    
     core_radius = radius - 4
     pygame.draw.circle(screen, DISK_OUTLINE_COLOR, (int(x), int(y)), core_radius)
-    
     black_core_radius = radius - 6
     pygame.draw.circle(screen, DISK_COLOR, (int(x), int(y)), black_core_radius)
 
@@ -54,18 +51,14 @@ def draw_rotating_dual_disk(x, y, radius, angle):
     center = size // 2
     
     pygame.draw.circle(disk_surface, DISK_OUTLINE_COLOR, (center, center), radius)
-    
     inner_radius = radius - 2
     pygame.draw.circle(disk_surface, DISK_COLOR, (center, center), inner_radius)
-    
     core_radius = radius - 4
     pygame.draw.circle(disk_surface, DISK_OUTLINE_COLOR, (center, center), core_radius)
-    
     black_core_radius = radius - 6
     pygame.draw.circle(disk_surface, DISK_COLOR, (center, center), black_core_radius)
     
     rotated_disk = pygame.transform.rotate(disk_surface, math.degrees(angle))
-    
     new_rect = rotated_disk.get_rect(center=(x, y))
     screen.blit(rotated_disk, new_rect)
 
@@ -89,7 +82,6 @@ class Player:
         if self.has_disk:
             disk_x = self.rect.centerx
             disk_y = self.rect.centery
-            
             draw_dual_disk(disk_x, disk_y, DISK_ON_BACK_RADIUS)
 
 class Disk:
@@ -100,7 +92,7 @@ class Disk:
         self.speed = DISK_SPEED
         self.return_speed = DISK_SPEED * RETURN_SPEED_MULTIPLIER
         self.angle = angle
-        self.rotation_angle = 0  # Угол поворота диска
+        self.rotation_angle = 0
         self.distance_traveled = 0
         self.flying = True
         self.radius = DISK_RADIUS
@@ -146,12 +138,17 @@ class Disk:
                 return True
         return False
 
+    def start_returning(self, player_position):
+        if self.flying or not self.returning:
+            self.flying = False
+            self.returning = True
+            self.target_position = player_position
+
     def get_rect(self):
         return pygame.Rect(self.x - self.radius, self.y - self.radius, 
                           self.radius * 2, self.radius * 2)
 
     def draw(self):
-        # Рисуем след
         for i, pos in enumerate(self.trail):
             alpha = (i + 1) / len(self.trail) * 255 * TRAIL_FADE
             trail_radius = self.radius * (0.5 + (i / len(self.trail)) * 0.5)
@@ -242,7 +239,7 @@ def main():
                         mouse_x, mouse_y = pygame.mouse.get_pos()
                         angle = math.atan2(mouse_y - player.rect.centery, mouse_x - player.rect.centerx)
                         disks.append(Disk(player.rect.centerx, player.rect.centery, angle))
-                        player.has_disk = False  # Убираем диск со спины
+                        player.has_disk = False
                 
                 elif event.button == 3:
                     show_shield = not show_shield
@@ -253,26 +250,29 @@ def main():
         player.move(dx, dy)
 
         shield.update(pygame.mouse.get_pos())
-
         player_position = (player.rect.centerx, player.rect.centery)
 
         for enemy in enemies:
             enemy.move()
 
         for disk in disks[:]:
-            if disk.move(player_position):
-                disks.remove(disk)
-                player.has_disk = True 
-
+            disk_returned = disk.move(player_position)
+            
+            hit_enemy = None
             for enemy in enemies[:]:
-                if disk.get_rect().colliderect(enemy.rect) and disk.flying:
-                    enemy.health -= 50
-                    disk.flying = False
-                    disk.returning = True
-                    disk.target_position = player_position
-                    if enemy.health <= 0:
-                        enemies.remove(enemy)
+                if disk.get_rect().colliderect(enemy.rect):
+                    hit_enemy = enemy
                     break
+            
+            if hit_enemy:
+                hit_enemy.health -= 50
+                if hit_enemy.health <= 0:
+                    enemies.remove(hit_enemy)
+                disk.start_returning(player_position)
+            
+            if disk_returned:
+                disks.remove(disk)
+                player.has_disk = True
 
         player.draw()
         for disk in disks:
