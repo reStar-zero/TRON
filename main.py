@@ -1,6 +1,7 @@
 import pygame
 import random
 import math
+import time
 
 WIDTH, HEIGHT = 1000, 800
 BLACK = (0, 0, 0)
@@ -20,6 +21,8 @@ ENEMY_COLOR = (0, 0, 0)
 ENEMY_OUTLINE_COLOR = (255, 0, 0)
 FORBIDDEN_COLOR = (0, 0, 0)
 FORBIDDEN_OUTLINE_COLOR = (255, 255, 255)
+MEDKIT_COLOR = (255, 255, 255)
+MEDKIT_CROSS_COLOR = (0, 255, 0)
 DISK_DISTANCE = 400
 DISK_SPEED = 10
 DISK_RADIUS = 10
@@ -30,12 +33,21 @@ RETURN_SPEED_MULTIPLIER = 1.5
 TRAIL_LENGTH = 20
 TRAIL_FADE = 0.7
 FORBIDDEN_SIZE = 200
+MAX_HEALTH = 5
+SHIELD_REFLECT_BUFF_TIME = 0.5
+CHARGED_DISK_DISTANCE_MULTIPLIER = 2.0
+CHARGED_DISK_SPEED_MULTIPLIER = 1.5
+CHARGED_DISK_DAMAGE_MULTIPLIER = 2.0
+MEDKIT_SPAWN_DELAY = 3000
 
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("TRON")
-programIcon = pygame.image.load('images/icon.png')
-pygame.display.set_icon(programIcon)
+try:
+    programIcon = pygame.image.load('images/icon.png')
+    pygame.display.set_icon(programIcon)
+except:
+    pass
 
 forbidden_rect = pygame.Rect(WIDTH // 2 - FORBIDDEN_SIZE // 2, HEIGHT // 2 - FORBIDDEN_SIZE // 2, FORBIDDEN_SIZE, FORBIDDEN_SIZE)
 
@@ -49,8 +61,35 @@ def draw_forbidden_area():
     pygame.draw.rect(screen, FORBIDDEN_COLOR, forbidden_rect)
     pygame.draw.rect(screen, FORBIDDEN_OUTLINE_COLOR, forbidden_rect, OUTLINE_WIDTH)
 
-def draw_disk_on_back(x, y, radius, is_enemy=False):
-    outline_color = DISK_ON_BACK_OUTLINE_COLOR if not is_enemy else ENEMY_DISK_ON_BACK_OUTLINE_COLOR
+def draw_health(health, x, y, is_player=True):
+    HEART_RADIUS = 12
+    HEART_SPACING = 28
+    color = (0, 100, 255) if is_player else (255, 50, 50)
+    
+    for i in range(MAX_HEALTH):
+        heart_x = x + i * HEART_SPACING
+        if i < health:
+            pygame.draw.circle(screen, color, (heart_x, y), HEART_RADIUS)
+            pygame.draw.circle(screen, WHITE, (heart_x, y), HEART_RADIUS, 2)
+        else:
+            pygame.draw.circle(screen, (50, 50, 50), (heart_x, y), HEART_RADIUS)
+            pygame.draw.circle(screen, (100, 100, 100), (heart_x, y), HEART_RADIUS, 2)
+
+def draw_medkit(x, y):
+    size = 20
+    medkit_rect = pygame.Rect(x, y, size, size)
+    pygame.draw.rect(screen, MEDKIT_COLOR, medkit_rect)
+    pygame.draw.rect(screen, BLACK, medkit_rect, 2)
+    pygame.draw.line(screen, MEDKIT_CROSS_COLOR, (x + size//2, y + 4), (x + size//2, y + size - 4), 4)
+    pygame.draw.line(screen, MEDKIT_CROSS_COLOR, (x + 4, y + size//2), (x + size - 4, y + size//2), 4)
+
+def draw_disk_on_back(x, y, radius, is_enemy=False, is_charged=False):
+    if is_charged:
+        outline_color = (255, 215, 0)
+        pygame.draw.circle(screen, outline_color, (int(x), int(y)), radius + 2)
+    else:
+        outline_color = DISK_ON_BACK_OUTLINE_COLOR if not is_enemy else ENEMY_DISK_ON_BACK_OUTLINE_COLOR
+    
     pygame.draw.circle(screen, outline_color, (int(x), int(y)), radius)
     inner_radius = radius - 2
     pygame.draw.circle(screen, DISK_ON_BACK_COLOR, (int(x), int(y)), inner_radius)
@@ -59,13 +98,16 @@ def draw_disk_on_back(x, y, radius, is_enemy=False):
     black_core_radius = radius - 6
     pygame.draw.circle(screen, DISK_ON_BACK_COLOR, (int(x), int(y)), black_core_radius)
 
-def draw_rotating_disk(x, y, radius, angle, is_enemy=False):
+def draw_rotating_disk(x, y, radius, angle, is_enemy=False, is_charged=False):
     size = radius * 2 + 8
     disk_surface = pygame.Surface((size, size), pygame.SRCALPHA)
     center = size // 2
     
     color = DISK_COLOR if not is_enemy else ENEMY_DISK_COLOR
-    outline_color = DISK_OUTLINE_COLOR if not is_enemy else ENEMY_DISK_OUTLINE_COLOR
+    if is_charged:
+        outline_color = (255, 215, 0)
+    else:
+        outline_color = DISK_OUTLINE_COLOR if not is_enemy else ENEMY_DISK_OUTLINE_COLOR
     
     pygame.draw.circle(disk_surface, outline_color, (center, center), radius)
     inner_radius = radius - 2
@@ -92,10 +134,9 @@ class Player:
             self.rect.x = random.randint(0, WIDTH - self.rect.width)
             self.rect.y = random.randint(0, HEIGHT - self.rect.height)
         self.speed = 6
-        self.has_shield = False
         self.has_disk = True
-        self.health = 100
-        self.shield_active = False
+        self.health = MAX_HEALTH
+        self.disk_charged = False
 
     def move(self, dx, dy):
         new_x = self.rect.x + dx * self.speed
@@ -116,14 +157,22 @@ class Player:
         if self.has_disk:
             disk_x = self.rect.centerx
             disk_y = self.rect.centery
-            draw_disk_on_back(disk_x, disk_y, DISK_RADIUS, is_enemy=False)
+            draw_disk_on_back(disk_x, disk_y, DISK_RADIUS, is_enemy=False, is_charged=self.disk_charged)
 
 class Disk:
-    def __init__(self, x, y, angle, is_enemy=False):
+    def __init__(self, x, y, angle, is_enemy=False, is_charged=False):
         self.x = x
         self.y = y
-        self.speed = DISK_SPEED
-        self.return_speed = DISK_SPEED * RETURN_SPEED_MULTIPLIER
+        self.is_charged = is_charged
+        if is_charged:
+            self.speed = DISK_SPEED * CHARGED_DISK_SPEED_MULTIPLIER
+            self.max_distance = DISK_DISTANCE * CHARGED_DISK_DISTANCE_MULTIPLIER
+            self.damage = 1
+        else:
+            self.speed = DISK_SPEED
+            self.max_distance = DISK_DISTANCE
+            self.damage = 1
+        self.return_speed = self.speed * RETURN_SPEED_MULTIPLIER
         self.angle = angle
         self.rotation_angle = 0
         self.distance_traveled = 0
@@ -180,7 +229,7 @@ class Disk:
             if len(self.trail) > TRAIL_LENGTH:
                 self.trail.pop(0)
             
-            if self.distance_traveled >= DISK_DISTANCE:
+            if self.distance_traveled >= self.max_distance:
                 self.flying = False
                 self.returning = True
                 self.target_position = target_position
@@ -224,13 +273,16 @@ class Disk:
             trail_radius = self.radius * (0.5 + (i / len(self.trail)) * 0.5)
             
             trail_surface = pygame.Surface((trail_radius * 2, trail_radius * 2), pygame.SRCALPHA)
-            outline_color = DISK_OUTLINE_COLOR if not self.is_enemy else ENEMY_DISK_OUTLINE_COLOR
+            if self.is_charged:
+                outline_color = (255, 215, 0)
+            else:
+                outline_color = DISK_OUTLINE_COLOR if not self.is_enemy else ENEMY_DISK_OUTLINE_COLOR
             trail_color = (*outline_color, int(alpha))
             pygame.draw.circle(trail_surface, trail_color, 
                              (trail_radius, trail_radius), trail_radius)
             screen.blit(trail_surface, (pos[0] - trail_radius, pos[1] - trail_radius))
         
-        draw_rotating_disk(self.x, self.y, self.radius, self.rotation_angle, self.is_enemy)
+        draw_rotating_disk(self.x, self.y, self.radius, self.rotation_angle, self.is_enemy, self.is_charged)
 
 class Shield:
     def __init__(self, player):
@@ -239,6 +291,7 @@ class Shield:
         self.angle = 0
         self.radius = SHIELD_RADIUS
         self.active = False
+        self.last_reflect_time = 0
         
     def update(self, mouse_pos):
         if self.active:
@@ -257,10 +310,25 @@ class Shield:
         x, y = self.get_position()
         return pygame.Rect(x - self.radius, y - self.radius, 
                           self.radius * 2, self.radius * 2)
+    
+    def reflect(self):
+        self.last_reflect_time = time.time()
+        
+    def is_charged(self):
+        return time.time() - self.last_reflect_time <= SHIELD_REFLECT_BUFF_TIME
         
     def draw(self):
         if self.active:
             x, y = self.get_position()
+            if self.is_charged():
+                glow_radius = self.radius + 4
+                for i in range(3):
+                    alpha = 100 - i * 30
+                    glow_surface = pygame.Surface((glow_radius * 2, glow_radius * 2), pygame.SRCALPHA)
+                    pygame.draw.circle(glow_surface, (255, 215, 0, alpha), 
+                                     (glow_radius, glow_radius), glow_radius - i * 2)
+                    screen.blit(glow_surface, (x - glow_radius + i * 2, y - glow_radius + i * 2))
+            
             pygame.draw.circle(screen, SHIELD_COLOR, (int(x), int(y)), self.radius)
             pygame.draw.circle(screen, SHIELD_OUTLINE_COLOR, (int(x), int(y)), self.radius, OUTLINE_WIDTH)
 
@@ -270,12 +338,22 @@ class Enemy:
         while self.rect.colliderect(forbidden_rect):
             self.rect.x = random.randint(0, WIDTH - self.rect.width)
             self.rect.y = random.randint(0, HEIGHT - self.rect.height)
-        self.health = 100
+        self.health = MAX_HEALTH
         self.speed = 3
         self.has_disk = True
         self.last_shot_time = 0
         self.shoot_delay = 2000
         self.active = False
+
+    def respawn(self):
+        self.rect = pygame.Rect(random.randint(0, WIDTH - 50), random.randint(0, HEIGHT - 50), 50, 50)
+        while self.rect.colliderect(forbidden_rect):
+            self.rect.x = random.randint(0, WIDTH - self.rect.width)
+            self.rect.y = random.randint(0, HEIGHT - self.rect.height)
+        self.health = MAX_HEALTH
+        self.has_disk = True
+        self.last_shot_time = 0
+        self.active = True
 
     def update_ai(self, player_pos, current_time):
         if not self.active:
@@ -317,141 +395,244 @@ class Enemy:
             disk_y = self.rect.centery
             draw_disk_on_back(disk_x, disk_y, DISK_RADIUS, is_enemy=True)
 
-def handle_events(events, player, shield, player_disks):
-    """Обработка ввода пользователя"""
-    for event in events:
-        if event.type == pygame.QUIT:                     # Закрытие окна
-            return False
+class Medkit:
+    def __init__(self, x, y):
+        self.rect = pygame.Rect(x, y, 20, 20)
+        
+    def draw(self):
+        draw_medkit(self.rect.x, self.rect.y)
+
+def show_game_over_screen():
+    font_big = pygame.font.Font(None, 72)
+    font_small = pygame.font.Font(None, 36)
+    
+    overlay = pygame.Surface((WIDTH, HEIGHT))
+    overlay.set_alpha(200)
+    overlay.fill(BLACK)
+    screen.blit(overlay, (0, 0))
+    
+    game_over_text = font_big.render("GAME OVER", True, WHITE)
+    text_rect = game_over_text.get_rect(center=(WIDTH//2, HEIGHT//2 - 100))
+    screen.blit(game_over_text, text_rect)
+    
+    restart_text = font_small.render("Press Z to Restart or X to Quit", True, WHITE)
+    restart_rect = restart_text.get_rect(center=(WIDTH//2, HEIGHT//2))
+    screen.blit(restart_text, restart_rect)
+    
+    pygame.display.flip()
+    
+    waiting = True
+    while waiting:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_z:
+                    return True
+                if event.key == pygame.K_x:
+                    return False
+    return False
+
+def handle_events():
+    global running, player, shield, player_disks, right_mouse_pressed, enemy
+    
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
         
         if event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:                         # Левая кнопка мыши - бросок диска
+            if event.button == 1:
                 if player.has_disk and not any(d.flying or d.returning for d in player_disks):
                     mouse_x, mouse_y = pygame.mouse.get_pos()
                     angle = math.atan2(mouse_y - player.rect.centery, 
                                       mouse_x - player.rect.centerx)
-                    player_disks.append(Disk(player.rect.centerx, player.rect.centery, angle))
+                    player_disks.append(Disk(player.rect.centerx, player.rect.centery, angle, 
+                                            is_enemy=False, is_charged=player.disk_charged))
                     player.has_disk = False
+                    player.disk_charged = False
             
-            elif event.button == 3:                       # Правая кнопка мыши - активация щита
+            elif event.button == 3:
                 shield.active = True
+                right_mouse_pressed = True
         
-        if event.type == pygame.MOUSEBUTTONUP and event.button == 3:   # Отпускание ПКМ
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 3:
             shield.active = False
-    
-    return True
+            right_mouse_pressed = False
+        
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_q and not enemy.active:
+                enemy.respawn()
 
-def handle_player_movement(player):
-    """Обработка движения игрока"""
+def update_player():
+    global player, enemy
+    
     keys = pygame.key.get_pressed()
-    dx = keys[pygame.K_RIGHT] - keys[pygame.K_LEFT]       # Горизонтальное движение
-    dy = keys[pygame.K_DOWN] - keys[pygame.K_UP]          # Вертикальное движение
+    dx = keys[pygame.K_RIGHT] - keys[pygame.K_LEFT]
+    dy = keys[pygame.K_DOWN] - keys[pygame.K_UP]
     player.move(dx, dy)
-    
-    if keys[pygame.K_q]:                                  # Клавиша Q - активация врага
-        return True
-    return False
 
-def update_disks(disks, target_position, target_rect, is_enemy, shield, player_health=None):
-    """Обновление состояния дисков и проверка коллизий"""
-    disks_to_remove = []
+def update_shield():
+    global shield, right_mouse_pressed
     
-    for disk in disks[:]:
-        disk_returned = disk.move(target_position)        # Движение диска
+    if right_mouse_pressed:
+        mouse_pos = pygame.mouse.get_pos()
+        shield.update(mouse_pos)
+
+def update_health_packs():
+    global health_packs, player, last_spawn_time
+    
+    current_time = pygame.time.get_ticks()
+    missing_health = MAX_HEALTH - player.health
+    
+    while len(health_packs) > missing_health:
+        health_packs.pop()
+    
+    if missing_health > 0 and len(health_packs) < missing_health and current_time - last_spawn_time > MEDKIT_SPAWN_DELAY:
+        last_spawn_time = current_time
         
-        if disk.get_rect().colliderect(target_rect) and disk.is_enemy == is_enemy:   # Попадание в цель
-            if shield and shield.active and shield.get_rect().colliderect(disk.get_rect()):   # Блок щитом
-                disk.start_returning(target_position)
+        while True:
+            x = random.randint(50, WIDTH - 70)
+            y = random.randint(50, HEIGHT - 70)
+            medkit_rect = pygame.Rect(x, y, 20, 20)
+            if not medkit_rect.colliderect(forbidden_rect):
+                health_packs.append(Medkit(x, y))
+                break
+    
+    for medkit in health_packs[:]:
+        if player.rect.colliderect(medkit.rect) and player.health < MAX_HEALTH:
+            player.health = min(MAX_HEALTH, player.health + 1)
+            health_packs.remove(medkit)
+
+def update_disks():
+    global player_disks, enemy_disks, player, enemy, shield
+    
+    for disk in player_disks[:]:
+        disk_returned = disk.move((player.rect.centerx, player.rect.centery))
+        
+        if disk.get_rect().colliderect(enemy.rect) and enemy.active:
+            if shield.active and shield.get_rect().colliderect(disk.get_rect()):
+                disk.start_returning((player.rect.centerx, player.rect.centery))
+                shield.reflect()
+                player.disk_charged = True
             else:
-                if player_health is not None:
-                    player_health -= 25                   # Нанесение урона
-                disk.start_returning(target_position)
+                enemy.health -= disk.damage
+                disk.start_returning((player.rect.centerx, player.rect.centery))
         
-        if disk_returned:                                 # Диск вернулся
-            disks_to_remove.append(disk)
-    
-    return disks_to_remove, player_health
-
-def draw_ui(player, enemy, font, small_font):
-    """Отрисовка интерфейса"""
-    player_health_text = font.render(f'Health: {player.health}', True, WHITE)
-    screen.blit(player_health_text, (10, 10))             # Здоровье игрока
-    
-    if enemy.active:
-        enemy_health_text = font.render(f'Enemy Health: {enemy.health}', True, WHITE)
-        screen.blit(enemy_health_text, (10, 50))          # Здоровье врага
-    
-    q_text = small_font.render('Q - Activate Enemy', True, WHITE)
-    q_rect = q_text.get_rect()
-    q_rect.topright = (WIDTH - 10, 10)                    # Подсказка управления
-    screen.blit(q_text, q_rect)
-
-def main():
-    clock = pygame.time.Clock()
-    player = Player()                                     # Создание игрока
-    enemy = Enemy()                                       # Создание врага
-    player_disks = []                                     # Список дисков игрока
-    enemy_disks = []                                      # Список дисков врага
-    shield = Shield(player)                               # Создание щита
-    font = pygame.font.Font(None, 36)                     # Шрифт для здоровья
-    small_font = pygame.font.Font(None, 24)               # Маленький шрифт
-    running = True                                        # Флаг работы игры
-
-    while running:
-        screen.fill(BLACK)                                # Очистка экрана
-        draw_grid()                                       # Рисование сетки
-        draw_forbidden_area()                             # Рисование запретной зоны
-
-        running = handle_events(pygame.event.get(), player, shield, player_disks)   # Обработка событий
-        if not running:
-            break
-
-        enemy.active = handle_player_movement(player) or enemy.active   # Движение игрока и активация врага
-
-        shield.update(pygame.mouse.get_pos())             # Обновление позиции щита
-        
-        current_time = pygame.time.get_ticks()            # Текущее время
-        shoot_angle = enemy.update_ai((player.rect.centerx, player.rect.centery), current_time)   # AI врага
-        if shoot_angle is not None:                       # Враг стреляет
-            enemy_disks.append(Disk(enemy.rect.centerx, enemy.rect.centery, shoot_angle, is_enemy=True))
-            enemy.has_disk = False
-
-        removed_disks, _ = update_disks(                  # Обновление дисков игрока
-            player_disks, 
-            (player.rect.centerx, player.rect.centery),
-            enemy.rect, False, shield
-        )
-        for disk in removed_disks:                        # Удаление вернувшихся дисков
+        if disk_returned:
             player_disks.remove(disk)
             player.has_disk = True
-
-        removed_disks, player.health = update_disks(      # Обновление дисков врага
-            enemy_disks,
-            (enemy.rect.centerx, enemy.rect.centery),
-            player.rect, True, shield, player.health
-        )
-        for disk in removed_disks:                        # Удаление вернувшихся дисков
+    
+    for disk in enemy_disks[:]:
+        disk_returned = disk.move((enemy.rect.centerx, enemy.rect.centery))
+        
+        if disk.get_rect().colliderect(player.rect):
+            if shield.active and shield.get_rect().colliderect(disk.get_rect()):
+                disk.start_returning((enemy.rect.centerx, enemy.rect.centery))
+                shield.reflect()
+                player.disk_charged = True
+            else:
+                player.health -= disk.damage
+                disk.start_returning((enemy.rect.centerx, enemy.rect.centery))
+        
+        if disk_returned:
             enemy_disks.remove(disk)
             enemy.has_disk = True
 
-        if player.health <= 0 or enemy.health <= 0:       # Проверка окончания игры
-            running = False
+def draw_all():
+    global player, enemy, player_disks, enemy_disks, shield, health_packs
+    
+    player.draw()
+    if enemy.active:
+        enemy.draw()
+    
+    for disk in player_disks + enemy_disks:
+        disk.draw()
+    
+    if shield.active:
+        shield.draw()
+    
+    for medkit in health_packs:
+        medkit.draw()
+    
+    draw_health(player.health, 10, 10, is_player=True)
+    
+    if enemy.active:
+        draw_health(enemy.health, 10, 50, is_player=False)
+    
+    small_font = pygame.font.Font(None, 24)
+    q_text = small_font.render('Q - Activate Enemy', True, WHITE)
+    q_rect = q_text.get_rect()
+    q_rect.topright = (WIDTH - 10, 10)
+    screen.blit(q_text, q_rect)
+    
+    if player.disk_charged:
+        charge_text = small_font.render("DISK CHARGED!", True, (255, 215, 0))
+        charge_rect = charge_text.get_rect(center=(WIDTH//2, 30))
+        screen.blit(charge_text, charge_rect)
 
-        player.draw()                                     # Рисование игрока
+def main():
+    global running, player, enemy, player_disks, enemy_disks, shield, health_packs
+    global last_spawn_time, game_over, right_mouse_pressed
+    
+    running = True
+    clock = pygame.time.Clock()
+    
+    player = Player()
+    enemy = Enemy()
+    player_disks = []
+    enemy_disks = []
+    shield = Shield(player)
+    health_packs = []
+    last_spawn_time = 0
+    game_over = False
+    right_mouse_pressed = False
+    
+    while running:
+        if game_over:
+            if show_game_over_screen():
+                player = Player()
+                enemy = Enemy()
+                player_disks.clear()
+                enemy_disks.clear()
+                health_packs.clear()
+                shield = Shield(player)
+                game_over = False
+                last_spawn_time = pygame.time.get_ticks()
+            else:
+                running = False
+            continue
+        
+        screen.fill(BLACK)
+        draw_grid()
+        draw_forbidden_area()
+        
+        handle_events()
+        update_player()
+        update_health_packs()
+        update_shield()
+        
         if enemy.active:
-            enemy.draw()                                  # Рисование врага
+            current_time = pygame.time.get_ticks()
+            shoot_angle = enemy.update_ai((player.rect.centerx, player.rect.centery), current_time)
+            if shoot_angle is not None:
+                enemy_disks.append(Disk(enemy.rect.centerx, enemy.rect.centery, shoot_angle, is_enemy=True))
+                enemy.has_disk = False
         
-        for disk in player_disks + enemy_disks:           # Рисование всех дисков
-            disk.draw()
+        update_disks()
         
-        if shield.active:
-            shield.draw()                                 # Рисование щита
+        if player.health <= 0:
+            game_over = True
+        elif enemy.health <= 0:
+            enemy.active = False
+            enemy.health = MAX_HEALTH
+            enemy.has_disk = True
         
-        draw_ui(player, enemy, font, small_font)          # Рисование интерфейса
-
-        pygame.display.flip()                             # Обновление экрана
-        clock.tick(60)                                    # Ограничение FPS
-
-    pygame.quit()                                         # Выход из игры
+        draw_all()
+        
+        pygame.display.flip()
+        clock.tick(60)
+    
+    pygame.quit()
 
 if __name__ == "__main__":
-    main() 
+    main()
