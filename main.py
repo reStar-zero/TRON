@@ -48,9 +48,34 @@ pygame.display.set_caption("TRON")
 
 forbidden_rect = pygame.Rect(WIDTH // 2 - FORBIDDEN_SIZE // 2, HEIGHT // 2 - FORBIDDEN_SIZE // 2, FORBIDDEN_SIZE, FORBIDDEN_SIZE)
 
-# ========== ЭТАП 1: ОКНО ВВОДА ИМЕНИ ==========
+class SaveSystem:
+    def __init__(self, save_folder="Save"):
+        self.save_folder = save_folder
+        if not os.path.exists(save_folder):
+            os.makedirs(save_folder)
+    
+    def save(self, filename, data):
+        filepath = os.path.join(self.save_folder, filename)
+        with open(filepath, 'w') as f:
+            json.dump(data, f, indent=2)
+    
+    def load(self, filename, default=None):
+        path = os.path.join(self.save_folder, filename)
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                return json.load(f)
+        return default if default else {}
+    
+    def add_kill(self, name):
+        data = self.load("kills.json", {})
+        data[name] = data.get(name, 0) + 1
+        self.save("kills.json", data)
+        return data[name]
+    
+    def get_kills(self, name):
+        return self.load("kills.json", {}).get(name, 0)
+
 def get_player_name():
-    """Простое окно ввода имени"""
     font = pygame.font.Font(None, 48)
     input_box = pygame.Rect(WIDTH//2 - 150, HEIGHT//2 - 25, 300, 50)
     name = ""
@@ -84,7 +109,6 @@ def get_player_name():
     
     return None
 
-# ========== ОСТАЛЬНЫЕ ФУНКЦИИ ИГРЫ (БЕЗ СИСТЕМЫ УБИЙСТВ) ==========
 def draw_grid():
     for x in range(0, WIDTH, GRID_SIZE):
         pygame.draw.line(screen, WHITE, (x, 0), (x, HEIGHT), 1)
@@ -573,7 +597,7 @@ def update_disks():
             enemy.has_disk = True
 
 def draw_all():
-    global player, enemy, player_disks, enemy_disks, shield, health_packs, player_name
+    global player, enemy, player_disks, enemy_disks, shield, health_packs, player_name, save_system
     
     player.draw()
     if enemy.active:
@@ -594,15 +618,25 @@ def draw_all():
         draw_health(enemy.health, 10, 50, is_player=False)
     
     small_font = pygame.font.Font(None, 24)
+    big_font = pygame.font.Font(None, 72)
+    
     q_text = small_font.render('Q - Activate Enemy', True, WHITE)
     q_rect = q_text.get_rect()
     q_rect.topright = (WIDTH - 10, 10)
     screen.blit(q_text, q_rect)
     
-    # Отображаем имя игрока
+    current_kills = save_system.get_kills(player_name)
+    kills_text = big_font.render(str(current_kills), True, (255, 215, 0))
+    kills_rect = kills_text.get_rect(center=(WIDTH//2, 60))
+    screen.blit(kills_text, kills_rect)
+    
     name_text = small_font.render(f'Player: {player_name}', True, WHITE)
     name_rect = name_text.get_rect(topleft=(10, 10))
     screen.blit(name_text, name_rect)
+    
+    kills_label = small_font.render(f'Kills: {current_kills}', True, (255, 215, 0))
+    kills_label_rect = kills_label.get_rect(topleft=(10, 35))
+    screen.blit(kills_label, kills_label_rect)
     
     if player.disk_charged:
         charge_text = small_font.render("DISK CHARGED!", True, (255, 215, 0))
@@ -611,13 +645,14 @@ def draw_all():
 
 def main():
     global running, player, enemy, player_disks, enemy_disks, shield, health_packs
-    global last_spawn_time, game_over, right_mouse_pressed, player_name
+    global last_spawn_time, game_over, right_mouse_pressed, player_name, save_system
     
-    # ЭТАП 1: запрашиваем имя
     player_name = get_player_name()
     if not player_name:
         pygame.quit()
         return
+    
+    save_system = SaveSystem()
     
     running = True
     clock = pygame.time.Clock()
@@ -668,6 +703,7 @@ def main():
         if player.health <= 0:
             game_over = True
         elif enemy.health <= 0:
+            save_system.add_kill(player_name)
             enemy.active = False
             enemy.health = MAX_HEALTH
             enemy.has_disk = True
