@@ -45,9 +45,15 @@ MEDKIT_SPAWN_DELAY = 3000
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("TRON")
+try:
+    programIcon = pygame.image.load('images/icon.png')
+    pygame.display.set_icon(programIcon)
+except:
+    pass
 
 forbidden_rect = pygame.Rect(WIDTH // 2 - FORBIDDEN_SIZE // 2, HEIGHT // 2 - FORBIDDEN_SIZE // 2, FORBIDDEN_SIZE, FORBIDDEN_SIZE)
 
+# ==================== СИСТЕМА СОХРАНЕНИЯ ====================
 class SaveSystem:
     def __init__(self, save_folder="Save"):
         self.save_folder = save_folder
@@ -55,8 +61,7 @@ class SaveSystem:
             os.makedirs(save_folder)
     
     def save(self, filename, data):
-        filepath = os.path.join(self.save_folder, filename)
-        with open(filepath, 'w') as f:
+        with open(os.path.join(self.save_folder, filename), 'w') as f:
             json.dump(data, f, indent=2)
     
     def load(self, filename, default=None):
@@ -67,14 +72,20 @@ class SaveSystem:
         return default if default else {}
     
     def add_kill(self, name):
-        data = self.load("kills.json", {})
+        data = self.load("leaderboard.json", {})
         data[name] = data.get(name, 0) + 1
-        self.save("kills.json", data)
+        self.save("leaderboard.json", data)
         return data[name]
     
-    def get_kills(self, name):
-        return self.load("kills.json", {}).get(name, 0)
+    def get_leaderboard(self, limit=5):
+        data = self.load("leaderboard.json", {})
+        sorted_data = sorted(data.items(), key=lambda x: x[1], reverse=True)
+        return sorted_data[:limit]
+    
+    def get_player_kills(self, name):
+        return self.load("leaderboard.json", {}).get(name, 0)
 
+# ==================== ОКНО ВВОДА ИМЕНИ ====================
 def get_player_name():
     font = pygame.font.Font(None, 48)
     input_box = pygame.Rect(WIDTH//2 - 150, HEIGHT//2 - 25, 300, 50)
@@ -91,6 +102,8 @@ def get_player_name():
                     return name.strip()[:20]
                 elif event.key == pygame.K_BACKSPACE:
                     name = name[:-1]
+                elif event.key == pygame.K_ESCAPE:
+                    return None
                 else:
                     if len(name) < 20 and event.unicode.isprintable():
                         name += event.unicode
@@ -100,7 +113,7 @@ def get_player_name():
         title_rect = title.get_rect(center=(WIDTH//2, HEIGHT//2 - 80))
         screen.blit(title, title_rect)
         
-        txt_surface = font.render(name + "_", True, WHITE)
+        txt_surface = font.render(name, True, WHITE)
         screen.blit(txt_surface, (input_box.x + 10, input_box.y + 10))
         pygame.draw.rect(screen, WHITE, input_box, 2)
         
@@ -109,6 +122,7 @@ def get_player_name():
     
     return None
 
+# ==================== ФУНКЦИИ ОТРИСОВКИ ====================
 def draw_grid():
     for x in range(0, WIDTH, GRID_SIZE):
         pygame.draw.line(screen, WHITE, (x, 0), (x, HEIGHT), 1)
@@ -185,6 +199,7 @@ def draw_rotating_disk(x, y, radius, angle, is_enemy=False, is_charged=False):
     new_rect = rotated_disk.get_rect(center=(x, y))
     screen.blit(rotated_disk, new_rect)
 
+# ==================== КЛАССЫ ИГРЫ ====================
 class Player:
     def __init__(self):
         self.rect = pygame.Rect(WIDTH // 2, HEIGHT // 2, 50, 50)
@@ -460,6 +475,7 @@ class Medkit:
     def draw(self):
         draw_medkit(self.rect.x, self.rect.y)
 
+# ==================== ИГРОВЫЕ ФУНКЦИИ ====================
 def show_game_over_screen():
     font_big = pygame.font.Font(None, 72)
     font_small = pygame.font.Font(None, 36)
@@ -597,7 +613,7 @@ def update_disks():
             enemy.has_disk = True
 
 def draw_all():
-    global player, enemy, player_disks, enemy_disks, shield, health_packs, player_name, save_system
+    global player, enemy, player_disks, enemy_disks, shield, health_packs, save_system, player_name, big_font
     
     player.draw()
     if enemy.active:
@@ -625,37 +641,46 @@ def draw_all():
     q_rect.topright = (WIDTH - 10, 10)
     screen.blit(q_text, q_rect)
     
-    current_kills = save_system.get_kills(player_name)
+    # Текущие убийства по центру
+    current_kills = save_system.get_player_kills(player_name)
     kills_text = big_font.render(str(current_kills), True, (255, 215, 0))
     kills_rect = kills_text.get_rect(center=(WIDTH//2, 60))
     screen.blit(kills_text, kills_rect)
     
-    name_text = small_font.render(f'Player: {player_name}', True, WHITE)
-    name_rect = name_text.get_rect(topleft=(10, 10))
-    screen.blit(name_text, name_rect)
+    # Топ 5 игроков справа сверху
+    leaderboard = save_system.get_leaderboard(5)
+    title_text = small_font.render("TOP PLAYERS", True, WHITE)
+    title_rect = title_text.get_rect(topright=(WIDTH - 10, 50))
+    screen.blit(title_text, title_rect)
     
-    kills_label = small_font.render(f'Kills: {current_kills}', True, (255, 215, 0))
-    kills_label_rect = kills_label.get_rect(topleft=(10, 35))
-    screen.blit(kills_label, kills_label_rect)
+    for i, (name, kills) in enumerate(leaderboard):
+        text = small_font.render(f"{i+1}. {name[:15]}: {kills}", True, WHITE)
+        text_rect = text.get_rect(topright=(WIDTH - 10, 75 + i * 25))
+        screen.blit(text, text_rect)
     
     if player.disk_charged:
         charge_text = small_font.render("DISK CHARGED!", True, (255, 215, 0))
         charge_rect = charge_text.get_rect(center=(WIDTH//2, 30))
         screen.blit(charge_text, charge_rect)
 
+# ==================== ГЛАВНЫЙ ЦИКЛ ====================
 def main():
     global running, player, enemy, player_disks, enemy_disks, shield, health_packs
-    global last_spawn_time, game_over, right_mouse_pressed, player_name, save_system
+    global last_spawn_time, game_over, right_mouse_pressed, save_system, player_name, big_font
     
+    # Окно ввода имени
     player_name = get_player_name()
     if not player_name:
         pygame.quit()
         return
     
-    save_system = SaveSystem()
-    
     running = True
     clock = pygame.time.Clock()
+    
+    save_system = SaveSystem()
+    saved_color = save_system.load("color.json", {"r": 0, "g": 200, "b": 255})
+    global PLAYER_OUTLINE_COLOR
+    PLAYER_OUTLINE_COLOR = (saved_color["r"], saved_color["g"], saved_color["b"])
     
     player = Player()
     enemy = Enemy()
