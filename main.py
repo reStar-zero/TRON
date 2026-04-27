@@ -2,6 +2,8 @@ import pygame
 import random
 import math
 import time
+import json
+import os
 
 WIDTH, HEIGHT = 1000, 800
 BLACK = (0, 0, 0)
@@ -43,14 +45,46 @@ MEDKIT_SPAWN_DELAY = 3000
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("TRON")
-try:
-    programIcon = pygame.image.load('images/icon.png')
-    pygame.display.set_icon(programIcon)
-except:
-    pass
 
 forbidden_rect = pygame.Rect(WIDTH // 2 - FORBIDDEN_SIZE // 2, HEIGHT // 2 - FORBIDDEN_SIZE // 2, FORBIDDEN_SIZE, FORBIDDEN_SIZE)
 
+# ========== ЭТАП 1: ОКНО ВВОДА ИМЕНИ ==========
+def get_player_name():
+    """Простое окно ввода имени"""
+    font = pygame.font.Font(None, 48)
+    input_box = pygame.Rect(WIDTH//2 - 150, HEIGHT//2 - 25, 300, 50)
+    name = ""
+    active = True
+    clock = pygame.time.Clock()
+    
+    while active:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return None
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN and name.strip():
+                    return name.strip()[:20]
+                elif event.key == pygame.K_BACKSPACE:
+                    name = name[:-1]
+                else:
+                    if len(name) < 20 and event.unicode.isprintable():
+                        name += event.unicode
+        
+        screen.fill(BLACK)
+        title = font.render("ENTER YOUR NAME:", True, WHITE)
+        title_rect = title.get_rect(center=(WIDTH//2, HEIGHT//2 - 80))
+        screen.blit(title, title_rect)
+        
+        txt_surface = font.render(name + "_", True, WHITE)
+        screen.blit(txt_surface, (input_box.x + 10, input_box.y + 10))
+        pygame.draw.rect(screen, WHITE, input_box, 2)
+        
+        pygame.display.flip()
+        clock.tick(30)
+    
+    return None
+
+# ========== ОСТАЛЬНЫЕ ФУНКЦИИ ИГРЫ (БЕЗ СИСТЕМЫ УБИЙСТВ) ==========
 def draw_grid():
     for x in range(0, WIDTH, GRID_SIZE):
         pygame.draw.line(screen, WHITE, (x, 0), (x, HEIGHT), 1)
@@ -539,7 +573,7 @@ def update_disks():
             enemy.has_disk = True
 
 def draw_all():
-    global player, enemy, player_disks, enemy_disks, shield, health_packs
+    global player, enemy, player_disks, enemy_disks, shield, health_packs, player_name
     
     player.draw()
     if enemy.active:
@@ -565,6 +599,11 @@ def draw_all():
     q_rect.topright = (WIDTH - 10, 10)
     screen.blit(q_text, q_rect)
     
+    # Отображаем имя игрока
+    name_text = small_font.render(f'Player: {player_name}', True, WHITE)
+    name_rect = name_text.get_rect(topleft=(10, 10))
+    screen.blit(name_text, name_rect)
+    
     if player.disk_charged:
         charge_text = small_font.render("DISK CHARGED!", True, (255, 215, 0))
         charge_rect = charge_text.get_rect(center=(WIDTH//2, 30))
@@ -572,7 +611,13 @@ def draw_all():
 
 def main():
     global running, player, enemy, player_disks, enemy_disks, shield, health_packs
-    global last_spawn_time, game_over, right_mouse_pressed
+    global last_spawn_time, game_over, right_mouse_pressed, player_name
+    
+    # ЭТАП 1: запрашиваем имя
+    player_name = get_player_name()
+    if not player_name:
+        pygame.quit()
+        return
     
     running = True
     clock = pygame.time.Clock()
